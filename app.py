@@ -4,19 +4,18 @@ import plotly.graph_objects as go
 import seaborn as sns
 import streamlit as st
 import io
-import random
 from reportlab.pdfgen import canvas
-
 from rich.console import Console
 
-# Import path functions from your paths.py
+# Import path functions
 from paths import (
     generate_balanced_growth, generate_high_achiever, generate_downfall_recovery,
     generate_up_down, generate_perfectionist, generate_consistent_improvement,
     generate_chaotic, generate_late_bloomer, generate_spike_plateau, generate_senioritis,
     generate_no_study, generate_burnout, generate_triumph_over_adversity
 )
-# Import advanced analysis & plotting utilities
+
+# Import analysis & plotting utilities
 from analysis import (
     summarize_statistics,
     create_plotly_table,
@@ -50,37 +49,32 @@ def estimate_job_probability(final_cgpa):
     else:
         return 0.95
 
+def hex_to_rgb(hex_color):
+    """Convert hex color string to an RGB tuple."""
+    hex_color = hex_color.lstrip('#')
+    return tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+
 def main():
     st.title("The Ultimate CGPA Multiverse: No-Limit Advanced Stats Edition")
     st.markdown("""
-    Explore large-scale CGPA simulations with **no forced line-limit**, detailed statistical summaries, 
-    mass-mode range bands, and user-selectable Plotly themes for a visually appealing experience.
+    Welcome! Before running simulations, explore detailed information about various academic paths and 
+    how to interpret the ensuing plots. This guide will help you understand the simulation outcomes 
+    and their significance.
     """)
 
     # -------------------------------------------
-    # 1. SIDEBAR: Simulation & UI Config
+    # SIDEBAR: Simulation & UI Config
     # -------------------------------------------
     st.sidebar.header("Simulation Configuration")
-
-    # Theme selection
-    user_theme = st.sidebar.selectbox(
-        "Select Plotly Theme",
-        options=["plotly_white", "plotly_dark", "plotly", "ggplot2", "seaborn"],
-        index=0
-    )
-
-    # Mass Simulation toggle
     mass_mode = st.sidebar.checkbox(
         "Enable Mass Simulation Mode (Range Band)",
         value=False,
         help="When enabled, lines won't be limited. We also plot a 'range band' if many lines are generated."
     )
-
-    # Slider for the number of trajectories
-    # We'll allow up to 5000 to fully remove forced limits, but user can go higher if they want
-    variations = st.sidebar.slider("How many trajectories per path?", 1, 5000, 500 if mass_mode else 5)
-
-    # Path selection
+    variations = st.sidebar.slider(
+        "How many trajectories per path?",
+        1, 5000, 500 if mass_mode else 5
+    )
     all_paths = [
         "Balanced Growth", "High Achiever", "Downfall & Recovery", "Up & Down",
         "Perfectionist", "Consistent Improve", "Chaotic", "Late Bloomer",
@@ -91,116 +85,110 @@ def main():
         options=all_paths,
         default=["Balanced Growth", "High Achiever"]
     )
-
-    # Current semester & CGPA
     current_semester = st.sidebar.slider("Current Semester (1-10)", 1, 10, 1)
     current_cgpa = st.sidebar.slider("Current CGPA (0.0 - 4.0)", 0.0, 4.0, 2.91, 0.01)
 
-    # What-If CGPA Adjust
     with st.sidebar.expander("What-If Future CGPA Adjustments"):
         st.markdown("Simulate a consistent positive or negative shift each semester.")
         what_if_adjust = st.slider("Adjust future CGPAs by ±", -1.0, 1.0, 0.0, 0.05)
         st.write(f"Applying ±{what_if_adjust:.2f} shift to future steps.")
-
     with st.sidebar.expander("Advanced Options"):
         st.write("E.g., tweak growth rates, incorporate real data, or add custom events here...")
 
     st.sidebar.markdown("---")
     st.sidebar.info("All set! Let's run the simulation...")
 
-    # Setup steps & semester array
+    # -------------------------------------------
+    # Pre-Setup
+    # -------------------------------------------
     steps = 1 if current_semester >= 10 else (10 - current_semester + 1)
     future_semesters = np.arange(current_semester, current_semester + steps)
-
-    # Mapping path names to generator funcs
     path_map = {
-        "Balanced Growth":        generate_balanced_growth,
-        "High Achiever":          generate_high_achiever,
-        "Downfall & Recovery":    generate_downfall_recovery,
-        "Up & Down":              generate_up_down,
-        "Perfectionist":          generate_perfectionist,
-        "Consistent Improve":     generate_consistent_improvement,
-        "Chaotic":                generate_chaotic,
-        "Late Bloomer":           generate_late_bloomer,
-        "Spike Plateau":          generate_spike_plateau,
-        "Senioritis":             generate_senioritis,
-        "No Study":               generate_no_study,
-        "Burnout":                generate_burnout,
+        "Balanced Growth": generate_balanced_growth,
+        "High Achiever": generate_high_achiever,
+        "Downfall & Recovery": generate_downfall_recovery,
+        "Up & Down": generate_up_down,
+        "Perfectionist": generate_perfectionist,
+        "Consistent Improve": generate_consistent_improvement,
+        "Chaotic": generate_chaotic,
+        "Late Bloomer": generate_late_bloomer,
+        "Spike Plateau": generate_spike_plateau,
+        "Senioritis": generate_senioritis,
+        "No Study": generate_no_study,
+        "Burnout": generate_burnout,
         "Triumph Over Adversity": generate_triumph_over_adversity
+    }
+    style_map = {
+        "Balanced Growth": {"color": "#0000FF", "dash": "solid"},
+        "High Achiever": {"color": "#008000", "dash": "dash"},
+        "Downfall & Recovery": {"color": "#FF0000", "dash": "dot"},
+        "Up & Down": {"color": "#FFA500", "dash": "dashdot"},
+        "Perfectionist": {"color": "#800080", "dash": "solid"},
+        "Consistent Improve": {"color": "#A52A2A", "dash": "dash"},
+        "Chaotic": {"color": "#FF00FF", "dash": "dot"},
+        "Late Bloomer": {"color": "#008080", "dash": "dashdot"},
+        "Spike Plateau": {"color": "#808080", "dash": "solid"},
+        "Senioritis": {"color": "#00FFFF", "dash": "dash"},
+        "No Study": {"color": "#FFD700", "dash": "dot"},
+        "Burnout": {"color": "#000080", "dash": "dashdot"},
+        "Triumph Over Adversity": {"color": "#DC143C", "dash": "solid"}
     }
 
     # -------------------------------------------
-    # 2. MAIN CHART: Lines or Range Band
+    # MAIN CHART: Lines or Range Band
     # -------------------------------------------
     final_cgpas = []
     fig = go.Figure()
-
-    # For each selected path, we'll either show all lines or a range band if mass_mode
     for path_name in selected_paths:
-        all_trajectories = []  # store arrays of shape [variations, steps] for range band
+        all_trajectories = []
         for variation_index in range(variations):
-            # seed for reproducibility
-            seed_val = (42 + hash(path_name) + variation_index) % (2**32)
+            seed_val = (42 + hash(path_name) + variation_index) % (2 ** 32)
             traj = compute_trajectory(path_map[path_name], current_cgpa, steps, seed_val)
-
-            # apply CGPA shift
-            for i in range(1, len(traj)):
-                traj[i] = min(max(2.0, traj[i] + what_if_adjust), 4.0)
-
+            traj = [
+                min(max(2.0, score + what_if_adjust), 4.0) if i != 0 else score
+                for i, score in enumerate(traj)
+            ]
             final_val = traj[-1]
             cat = categorize_cgpa(final_val)
             job_prob = estimate_job_probability(final_val)
-
-            # basic advice
-            if final_val < 3.0:
-                advice = "Focus on fundamentals."
-            elif final_val < 3.5:
-                advice = "Strengthen projects/internships."
-            elif final_val < 3.6:
-                advice = "Aim for advanced courses."
-            elif final_val < 3.8:
-                advice = "Seek leadership roles."
-            else:
-                advice = "Expand into R&D."
-
-            final_cgpas.append((path_name, variation_index+1, final_val, cat, job_prob, advice))
+            advice = (
+                "Focus on fundamentals." if final_val < 3.0 else
+                "Strengthen projects/internships." if final_val < 3.5 else
+                "Aim for advanced courses." if final_val < 3.6 else
+                "Seek leadership roles." if final_val < 3.8 else
+                "Expand into R&D."
+            )
+            final_cgpas.append((path_name, variation_index + 1, final_val, cat, job_prob, advice))
             all_trajectories.append(traj)
 
-        all_trajectories = np.array(all_trajectories)  # shape: (variations, steps)
+        all_trajectories = np.array(all_trajectories)
 
         if mass_mode and variations > 1:
-            # Create a range band by computing min & max at each step
             min_curve = np.min(all_trajectories, axis=0)
             max_curve = np.max(all_trajectories, axis=0)
             x_band = np.concatenate([future_semesters, future_semesters[::-1]])
             y_band = np.concatenate([max_curve, min_curve[::-1]])
-
-            # Add a filled shape for the entire range
+            path_style = style_map[path_name]
+            rgb = hex_to_rgb(path_style["color"])
             fig.add_trace(go.Scatter(
                 x=x_band,
                 y=y_band,
                 fill='toself',
                 name=f"{path_name} Range",
                 mode='lines',
-                line=dict(width=0),
+                line=dict(width=2, color=path_style["color"]),
+                fillcolor=f'rgba({rgb[0]},{rgb[1]},{rgb[2]},0.2)',
                 hoverinfo='skip',
-                showlegend=True  # Show path name once
+                showlegend=True
             ))
         else:
-            # If not mass mode or variations <= 1, just add lines individually
-            # (Might be a lot of lines for large variations; user has no line-limit)
             for i in range(variations):
                 traj = all_trajectories[i]
-                # build custom data for next CG
-                customdata = []
-                for idx in range(steps):
-                    if idx < steps - 1:
-                        customdata.append(f"{traj[idx+1]:.2f}")
-                    else:
-                        customdata.append("N/A")
-                # label the first line from each path in legend
-                line_name = f"{path_name} Var {i+1}" if i == 0 else None
-
+                customdata = [
+                    f"{traj[idx + 1]:.2f}" if idx < steps - 1 else "N/A"
+                    for idx in range(steps)
+                ]
+                line_name = f"{path_name} Var {i + 1}" if i == 0 else None
                 fig.add_trace(go.Scatter(
                     x=future_semesters,
                     y=traj,
@@ -211,21 +199,21 @@ def main():
                         "Semester: %{x}<br>"
                         "CGPA: %{y:.2f}<br>"
                         "Next CGPA: %{customdata}<extra>%{fullData.name}</extra>"
+                    ),
+                    line=dict(
+                        color=style_map[path_name]["color"],
+                        dash=style_map[path_name]["dash"],
+                        width=2
                     )
                 ))
 
-    # Theme logic
     fig.update_layout(
         title="CGPA Evolution (No-Limit Edition)",
         xaxis_title="Semester",
         yaxis_title="Cumulative CGPA",
         hovermode="closest",
         transition_duration=500,
-        template=st.sidebar.selectbox(
-            "Choose a Plotly Theme:",
-            ["plotly_white", "plotly_dark", "plotly", "ggplot2", "seaborn"],
-            index=0
-        )
+        template="plotly_white"
     )
     fig.add_hline(
         y=3.6,
@@ -235,35 +223,127 @@ def main():
         annotation_position="bottom right"
     )
 
-    # TAB structure
-    tabs = st.tabs(["Interactive Graph", "Post-Simulation Analysis", "Distributions & Exports"])
+    # -------------------------------------------
+    # TAB STRUCTURE & CONTENT
+    # -------------------------------------------
+    tabs = st.tabs([
+        "Path Information",
+        "Interactive Graph",
+        "Post-Simulation Analysis",
+        "Distributions & Exports"
+    ])
 
-    # TAB 1: Graph
+    # TAB 1: Path Information
     with tabs[0]:
-        # If user is in mass_mode with large variations, we note the approach
+        st.header("Detailed Path Information & Interpretation")
+        st.markdown("""
+        ### Simulation Paths Explained
+        In this simulation, each path represents a unique academic journey:
+
+        - **Balanced Growth**: A steady, reliable increase in CGPA across semesters.
+        - **High Achiever**: Consistently high performance maintained throughout.
+        - **Downfall & Recovery**: A significant drop in performance followed by a strong recovery.
+        - **Up & Down**: Highly variable performance with ups and downs.
+        - **Perfectionist**: High expectations lead to occasional setbacks despite strong performance.
+        - **Consistent Improve**: Small, steady improvements over time.
+        - **Chaotic**: Unpredictable changes and no clear pattern.
+        - **Late Bloomer**: Slow start followed by rapid improvement in later semesters.
+        - **Spike Plateau**: Early peak performance with a subsequent leveling off.
+        - **Senioritis**: Decline in motivation and performance over time.
+        - **No Study**: Little to no improvement, reflecting minimal effort.
+        - **Burnout**: Rapid decline in performance after initial success due to fatigue.
+        - **Triumph Over Adversity**: Overcoming significant challenges to achieve high CGPA eventually.
+
+        ### How to Interpret the Plots
+        - **Interactive Graph**: Visualizes trajectories of CGPA evolution over semesters for each selected path.
+          - **Mass Mode**: Shaded areas (range bands) display the variability across multiple simulations.
+          - **Line Styles**: Each path has a unique color and line style to differentiate it.
+        - **Violin Plot**: Displays the distribution and density of final CGPAs, showing where most outcomes cluster.
+        - **Scatter Plot**: Plots final CGPAs against variation indices to visualize dispersion and outliers.
+        - **Bar Chart of CGPA Categories**: Summarizes how many trajectories fall into each CGPA category.
+
+        Use these plots to gain insights into potential academic trajectories, 
+        understand risks of burnout or consistent improvement, and identify patterns 
+        that might inform study strategies or interventions.
+        """)
+
+    # TAB 2: Interactive Graph
+    with tabs[1]:
         if mass_mode and variations > 100:
             st.info("Showing range band or many lines. This might be computationally heavy!")
         st.plotly_chart(fig, use_container_width=True)
 
-    # TAB 2: Analysis
-    with tabs[1]:
+    # TAB 3: Post-Simulation Analysis
+    with tabs[2]:
         table_data = []
         final_values_only = []
         for (p_name, var_idx, final_val, cat, job_prob, advice) in final_cgpas:
             table_data.append([
-                p_name,
-                var_idx,
-                f"{final_val:.2f}",
-                f"{job_prob*100:.1f}%",
-                advice,
-                cat
+                p_name, var_idx, f"{final_val:.2f}",
+                f"{job_prob * 100:.1f}%", advice, cat
             ])
             final_values_only.append(final_val)
 
         st.subheader("Post-Simulation Analysis")
-        # Create color-coded table
         fig_table = create_plotly_table(table_data)
         st.plotly_chart(fig_table, use_container_width=True)
+
+        if final_values_only:
+            st.markdown("#### Violin Plot of Final CGPAs")
+            fig_violin = go.Figure()
+            fig_violin.add_trace(go.Violin(
+                y=final_values_only,
+                box_visible=True,
+                meanline_visible=True,
+                fillcolor='lightseagreen',
+                opacity=0.6,
+                line_color='darkblue',
+                name='Final CGPAs'
+            ))
+            fig_violin.update_layout(
+                xaxis_title="All Trajectories",
+                yaxis_title="CGPA",
+                template="plotly_white"
+            )
+            st.plotly_chart(fig_violin, use_container_width=True)
+
+            st.markdown("#### Scatter Plot of Final CGPAs")
+            var_indices = [var_idx for (_, var_idx, _, _, _, _) in final_cgpas]
+            fig_scatter = go.Figure(data=go.Scatter(
+                x=var_indices,
+                y=final_values_only,
+                mode='markers',
+                marker=dict(
+                    size=8,
+                    color=final_values_only,
+                    colorscale='Viridis',
+                    showscale=True
+                )
+            ))
+            fig_scatter.update_layout(
+                xaxis_title="Variation Index",
+                yaxis_title="Final CGPA",
+                template="plotly_white"
+            )
+            st.plotly_chart(fig_scatter, use_container_width=True)
+
+            st.markdown("#### Bar Chart of CGPA Categories")
+            categories = [categorize_cgpa(val) for val in final_values_only]
+            category_series = pd.Series(categories)
+            category_counts = category_series.value_counts().sort_index()
+            fig_bar = go.Figure(
+                data=go.Bar(
+                    x=category_counts.index,
+                    y=category_counts.values,
+                    marker_color='teal'
+                )
+            )
+            fig_bar.update_layout(
+                xaxis_title="CGPA Category",
+                yaxis_title="Count",
+                template="plotly_white"
+            )
+            st.plotly_chart(fig_bar, use_container_width=True)
 
         st.markdown("### Extended Statistical Summary of Final CGPAs")
         if final_values_only:
@@ -281,9 +361,8 @@ def main():
                 if "95ci_lower" in stats and "95ci_upper" in stats:
                     st.write(f"**95% CI**: ({stats['95ci_lower']:.2f}, {stats['95ci_upper']:.2f})")
                 arr = np.array(final_values_only)
-                # Probability of crossing thresholds
-                st.write(f"**P(CGPA > 3.5)**: {np.mean(arr>3.5)*100:.2f}%")
-                st.write(f"**P(CGPA > 3.6)**: {np.mean(arr>3.6)*100:.2f}%")
+                st.write(f"**P(CGPA > 3.5)**: {np.mean(arr > 3.5) * 100:.2f}%")
+                st.write(f"**P(CGPA > 3.6)**: {np.mean(arr > 3.6) * 100:.2f}%")
             else:
                 st.write("No statistics available.")
         else:
@@ -298,28 +377,26 @@ def main():
         - **3.8+**: Near-perfect—focus on real-world, R&D, or specialized achievements!
         """)
 
-    # TAB 3: Distributions & Exports
-    with tabs[2]:
+    # TAB 4: Distributions & Exports
+    with tabs[3]:
         st.markdown("### Final CGPA Distributions")
         if final_values_only:
-            hist_fig = create_histogram(final_values_only)
-            st.plotly_chart(hist_fig, use_container_width=True)
-
-            box_fig = create_box_plot(final_values_only)
-            st.plotly_chart(box_fig, use_container_width=True)
-
-            pie_fig = create_pie_chart(final_values_only)
-            st.plotly_chart(pie_fig, use_container_width=True)
-
-            bar_fig = generate_category_distribution_bar(final_values_only)
-            st.plotly_chart(bar_fig, use_container_width=True)
+            st.plotly_chart(create_histogram(final_values_only), use_container_width=True)
+            st.plotly_chart(create_box_plot(final_values_only), use_container_width=True)
+            st.plotly_chart(create_pie_chart(final_values_only), use_container_width=True)
+            st.plotly_chart(generate_category_distribution_bar(final_values_only), use_container_width=True)
 
         st.markdown("### Export Simulation Results")
         df_results = pd.DataFrame(table_data, columns=[
             "Path", "Variation", "Final CGPA", "Job Prob(%)", "Advice", "Category"
         ])
         csv_data = df_results.to_csv(index=False).encode('utf-8')
-        st.download_button("Download CSV", data=csv_data, file_name="cgpa_simulation_results.csv", mime="text/csv")
+        st.download_button(
+            "Download CSV",
+            data=csv_data,
+            file_name="cgpa_simulation_results.csv",
+            mime="text/csv"
+        )
 
         if st.button("Download as PDF"):
             buffer = io.BytesIO()
@@ -332,7 +409,8 @@ def main():
                 c.drawString(50, y_pos, line)
                 y_pos -= 20
             c.save()
-            st.download_button("Download PDF",
+            st.download_button(
+                "Download PDF",
                 data=buffer.getvalue(),
                 file_name="cgpa_simulation_results.pdf",
                 mime="application/pdf"
