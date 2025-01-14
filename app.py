@@ -60,6 +60,7 @@ def main():
     Welcome! Before running simulations, explore detailed information about various academic paths and 
     how to interpret the ensuing plots. This guide will help you understand the simulation outcomes 
     and their significance.
+Made by Garaga Karthikeya@IIITB.
     """)
 
     # -------------------------------------------
