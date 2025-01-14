@@ -3,11 +3,12 @@ import pandas as pd
 import plotly.graph_objects as go
 import seaborn as sns
 import streamlit as st
+import io  # for PDF export
+from reportlab.pdfgen import canvas  # minimal PDF generation
 
 from rich.console import Console
-from rich.table import Table
-from rich import box
 
+# Import path functions from your paths.py
 from paths import (
     generate_balanced_growth, generate_high_achiever, generate_downfall_recovery,
     generate_up_down, generate_perfectionist, generate_consistent_improvement,
@@ -20,8 +21,24 @@ from paths import (
 # ----------------------------------------------------------------------------------
 @st.cache_data
 def compute_trajectory(_func, start_cgpa, steps, seed=None):
+    """Uses the path-generation function to compute a trajectory, cached by Streamlit."""
     return _func(start_cgpa, steps=steps, seed=seed)
 
+# Minimal placeholder function: job placement probability
+def estimate_job_probability(final_cgpa):
+    """Mock logic for demonstration purposes."""
+    if final_cgpa < 2.5:
+        return 0.4
+    elif final_cgpa < 3.0:
+        return 0.5
+    elif final_cgpa < 3.5:
+        return 0.7
+    elif final_cgpa < 3.8:
+        return 0.85
+    else:
+        return 0.95
+
+# Initialize styling
 sns.set_theme(style="darkgrid")
 console = Console()
 
@@ -29,13 +46,13 @@ console = Console()
 # 2. Streamlit App
 # ----------------------------------------------------------------------------------
 def main():
-    st.title("The Ultimate CGPA Multiverse (Animated!)")
+    st.title("The Ultimate CGPA Multiverse: Extended Stats Edition")
     st.markdown("""
-    Explore how your CGPA evolves under different academic scenarios. 
-    **Now with smoother animations** as you adjust your inputs! 
+    Explore how your CGPA evolves under different academic scenarios, 
+    now with **additional statistical analyses** for more in-depth insights.
     """)
 
-    # Sidebar Inputs
+    # 2.1 Sidebar Inputs
     st.sidebar.header("User Inputs")
     variations = st.sidebar.slider("How many trajectories per path?", 1, 10, 5)
     all_paths = [
@@ -52,142 +69,216 @@ def main():
     current_semester = st.sidebar.slider("Current Semester (1 to 10)", 1, 10, 1)
     current_cgpa = st.sidebar.slider("Current CGPA (0.0 to 4.0)", 0.0, 4.0, 2.91, 0.01)
 
-    st.sidebar.markdown("### Advanced Options")
-    with st.sidebar.expander("Placeholder for Additional Settings"):
-        st.write("Future: Tweak growth rates, add event triggers, etc.")
+    with st.sidebar.expander("What-If Future CGPA Adjustments"):
+        st.markdown("Hypothesize future performance to see potential impacts on your final CGPA.")
+        what_if_adjust = st.slider("Adjust future CGPAs by ± ...", -1.0, 1.0, 0.0, 0.05)
+        st.write(f"Applying {what_if_adjust:.2f} to each future step as a 'What-If' scenario.")
 
     # Determine steps & future semesters
     steps = 1 if current_semester >= 10 else 10 - current_semester + 1
     future_semesters = np.arange(current_semester, current_semester + steps)
 
-    # Define path styles
-    path_styles = {
-        "Balanced Growth":        {"func": generate_balanced_growth,        "color": "blue",      "marker": "circle"},
-        "High Achiever":          {"func": generate_high_achiever,          "color": "green",     "marker": "circle"},
-        "Downfall & Recovery":    {"func": generate_downfall_recovery,      "color": "red",       "marker": "circle"},
-        "Up & Down":              {"func": generate_up_down,                "color": "orange",    "marker": "circle"},
-        "Perfectionist":          {"func": generate_perfectionist,          "color": "purple",    "marker": "circle"},
-        "Consistent Improve":     {"func": generate_consistent_improvement, "color": "cyan",      "marker": "circle"},
-        "Chaotic":                {"func": generate_chaotic,                "color": "magenta",   "marker": "circle"},
-        "Late Bloomer":           {"func": generate_late_bloomer,           "color": "darkblue",  "marker": "circle"},
-        "Spike Plateau":          {"func": generate_spike_plateau,          "color": "lime",      "marker": "circle"},
-        "Senioritis":             {"func": generate_senioritis,             "color": "brown",     "marker": "circle"},
-        "No Study":               {"func": generate_no_study,               "color": "black",     "marker": "circle"},
-        "Burnout":                {"func": generate_burnout,                "color": "goldenrod", "marker": "circle"},
-        "Triumph Over Adversity": {"func": generate_triumph_over_adversity, "color": "teal",      "marker": "circle"}
+    # Path function map
+    path_map = {
+        "Balanced Growth": generate_balanced_growth,
+        "High Achiever": generate_high_achiever,
+        "Downfall & Recovery": generate_downfall_recovery,
+        "Up & Down": generate_up_down,
+        "Perfectionist": generate_perfectionist,
+        "Consistent Improve": generate_consistent_improvement,
+        "Chaotic": generate_chaotic,
+        "Late Bloomer": generate_late_bloomer,
+        "Spike Plateau": generate_spike_plateau,
+        "Senioritis": generate_senioritis,
+        "No Study": generate_no_study,
+        "Burnout": generate_burnout,
+        "Triumph Over Adversity": generate_triumph_over_adversity
     }
-
-    selected_path_data = {p: path_styles[p] for p in selected_paths}
-
-    st.sidebar.markdown("---")
-    st.sidebar.write("All inputs set. The simulation will run based on these parameters.")
-
-    console.log(f"Selected Paths: {selected_paths}")
 
     fig = go.Figure()
     final_cgpas = []
 
-    for path_name, style_info in selected_path_data.items():
-        func = style_info["func"]
-        color = style_info["color"]
-        marker = style_info["marker"]
-
+    for path_name in selected_paths:
         for variation_index in range(variations):
             seed_for_variation = (42 + hash(path_name) + variation_index) % (2**32)
-            trajectory = compute_trajectory(func, current_cgpa, steps, seed_for_variation)
-            final_cgpas.append((path_name, variation_index + 1, trajectory[-1]))
+            traj = compute_trajectory(path_map[path_name], current_cgpa, steps, seed_for_variation)
 
+            # Apply the "What-If" scenario adjust
+            for i in range(1, len(traj)):
+                new_val = traj[i] + what_if_adjust
+                traj[i] = min(max(2.0, new_val), 4.0)
+
+            # Record final CG
+            final_cgpas.append((path_name, variation_index + 1, traj[-1]))
+
+            # Hover data for next CG
             customdata = []
-            for idx, sem in enumerate(future_semesters):
-                if idx < len(trajectory)-1:
-                    customdata.append(f"{trajectory[idx+1]:.2f}")
+            for idx in range(len(traj)):
+                if idx < len(traj)-1:
+                    customdata.append(f"{traj[idx+1]:.2f}")
                 else:
                     customdata.append("N/A")
 
             fig.add_trace(go.Scatter(
                 x=future_semesters,
-                y=trajectory,
+                y=traj,
                 customdata=customdata,
                 mode='lines+markers',
                 name=f"{path_name} Var {variation_index+1}" if variation_index == 0 else None,
-                line=dict(color=color),
-                marker=dict(symbol=marker),
-                opacity=0.6,
                 hovertemplate=(
                     "Semester: %{x}<br>"
                     "CGPA: %{y:.2f}<br>"
-                    "Expected Next CGPA: %{customdata}<extra>%{fullData.name}</extra>"
+                    "Next CGPA: %{customdata}<extra>%{fullData.name}</extra>"
                 )
             ))
 
     fig.update_layout(
-        title="The Ultimate CGPA Multiverse",
+        title="CGPA Evolution with Additional Stats",
         xaxis_title="Semester",
         yaxis_title="Cumulative CGPA",
         hovermode="closest",
         transition_duration=500
     )
-    fig.add_hline(y=3.6, line_dash="dash", line_color="gray",
-                  annotation_text="Dean's List (3.6)", annotation_position="bottom right")
+    fig.add_hline(
+        y=3.6,
+        line_dash="dash",
+        line_color="gray",
+        annotation_text="Dean's List (3.6)",
+        annotation_position="bottom right"
+    )
 
     st.plotly_chart(fig, use_container_width=True)
 
+    # 2.2 More Analysis
+    st.subheader("Post-Simulation Analysis & Statistics")
     table_data = []
-    for path_name, variation_num, final_cg in final_cgpas:
-        if final_cg < 3.0:
+    final_values_only = []
+    for p_name, var_idx, final_val in final_cgpas:
+        job_prob = estimate_job_probability(final_val)
+        # Basic category message
+        if final_val < 3.0:
             category_msg = ("Below 3.0: Could face interview filters.\n"
                             "Tip: Boost fundamentals + real-world projects.")
-        elif final_cg < 3.5:
+        elif final_val < 3.5:
             category_msg = ("3.0-3.5: Safe for many roles.\n"
                             "Tip: Strong projects/internships can stand out.")
-        elif final_cg < 3.6:
+        elif final_val < 3.6:
             category_msg = ("3.5-3.6: You stand out.\n"
                             "Tip: Aim for advanced courses or certifications.")
-        elif final_cg < 3.8:
+        elif final_val < 3.8:
             category_msg = ("3.6-3.8: Dean's List territory.\n"
                             "Tip: Leadership roles, hackathons, or research.")
         else:
             category_msg = ("3.8-4.0: Near perfection!\n"
                             "Tip: Expand to open-source or specialized R&D.")
-        table_data.append((path_name, variation_num, f"{final_cg:.2f}", category_msg))
+        table_data.append([p_name, var_idx, f"{final_val:.2f}", f"{job_prob*100:.1f}%", category_msg])
+        final_values_only.append(final_val)
 
-    st.subheader("Post-Simulation Analysis")
-    st.table(pd.DataFrame(table_data, columns=["Path", "Variation", "Final CGPA", "Insights"]))
+    # Summaries
+    df_table = pd.DataFrame(table_data, columns=["Path", "Variation", "Final CGPA", "Job Prob(%)", "Insights"])
+    st.table(df_table)
+
+    st.markdown("### Statistical Summary of Final CGPAs")
+    final_arr = np.array(final_values_only)
+    if len(final_arr) > 0:
+        mean_val = np.mean(final_arr)
+        median_val = np.median(final_arr)
+        std_val = np.std(final_arr)
+        min_val = np.min(final_arr)
+        max_val = np.max(final_arr)
+
+        st.write(f"**Count**: {len(final_arr)}")
+        st.write(f"**Mean**: {mean_val:.2f}")
+        st.write(f"**Median**: {median_val:.2f}")
+        st.write(f"**Std Dev**: {std_val:.2f}")
+        st.write(f"**Min**: {min_val:.2f}")
+        st.write(f"**Max**: {max_val:.2f}")
+    else:
+        st.write("No final CGPAs computed (maybe no paths selected).")
+
+    # Additional charts
+    st.markdown("#### Final CGPA Distributions")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        # Histogram
+        if len(final_arr) > 0:
+            hist_fig = go.Figure()
+            hist_fig.add_trace(go.Histogram(x=final_arr, nbinsx=10, marker_color='lightskyblue'))
+            hist_fig.update_layout(
+                title="Histogram of Final CGPAs",
+                xaxis_title="Final CGPA",
+                yaxis_title="Count"
+            )
+            st.plotly_chart(hist_fig, use_container_width=True)
+
+    with col2:
+        if len(final_arr) > 0:
+            # Box Plot
+            box_fig = go.Figure()
+            box_fig.add_trace(go.Box(y=final_arr, name="Final CGPAs", boxpoints="all", jitter=0.5, marker_color="indianred"))
+            box_fig.update_layout(title="Box Plot of Final CGPAs")
+            st.plotly_chart(box_fig, use_container_width=True)
+
+    st.markdown("#### Ratio: CGPA>=3.0 vs. CGPA<3.0")
+    if len(final_arr) > 0:
+        success_count = np.sum(final_arr >= 3.0)
+        struggle_count = len(final_arr) - success_count
+        pie_fig = go.Figure(data=[go.Pie(
+            labels=["CGPA≥3.0", "CGPA<3.0"],
+            values=[success_count, struggle_count],
+            hole=0.4
+        )])
+        pie_fig.update_layout(title="CGPA≥3.0 vs. CGPA<3.0")
+        st.plotly_chart(pie_fig, use_container_width=True)
 
     st.markdown("""
-    **Quick Recruiter Insights:**
-    - **Below 3.0**: Some companies or roles may have a cutoff.
-    - **3.0 to 3.5**: Comfortable baseline for many mainstream applications.
-    - **3.5 to 3.6**: Strong contender; you’ll attract solid interest.
-    - **3.6 to 3.8+**: Dean's List territory, appealing to highly selective employers.
-    - **3.8+**: Near-perfect academically—balance with real-world projects too!
-
-    **Remember:** CGPA isn’t everything! Practical skills, projects, internships,
-    and your personal spark can tip the scales in your favor.
+    **Note**: CGPA is not the sole factor. The *Job Probability* column is a 
+    placeholder estimate. Real outcomes depend on internships, projects, networking, etc.
     """)
 
-    with st.expander("Skill-based Quizzes"):
-        st.markdown("*Placeholder*: Interactive quizzes to refine your study habits, track daily schedule, etc.")
-
-    with st.expander("Project Recommendations"):
-        st.markdown("*Placeholder*: Provide curated project ideas, research topics, open-source opportunities, etc.")
-
-    df_results = pd.DataFrame(table_data, columns=["Path", "Variation", "Final CGPA", "Insights"])
-    csv_data = df_results.to_csv(index=False).encode('utf-8')
+    # (11) Export Options: CSV and minimal PDF
+    st.markdown("### Export Simulation Results")
+    csv_data = df_table.to_csv(index=False).encode('utf-8')
     st.download_button(
-        label="Download Results as CSV",
+        label="Download CSV",
         data=csv_data,
         file_name="cgpa_simulation_results.csv",
         mime="text/csv"
     )
 
+    if st.button("Download as PDF"):
+        buffer = io.BytesIO()
+        c = canvas.Canvas(buffer)
+        c.setFont("Helvetica", 12)
+        c.drawString(100, 800, "CGPA Simulation Results")
+        y_pos = 770
+        for row in table_data:
+            line = f"{row[0]} (Var {row[1]}): CGPA={row[2]}, Prob={row[3]}, {row[4]}"
+            c.drawString(50, y_pos, line)
+            y_pos -= 20
+        c.save()
+        st.download_button(
+            label="Download PDF",
+            data=buffer.getvalue(),
+            file_name="cgpa_results.pdf",
+            mime="application/pdf"
+        )
+
+    with st.expander("Skill-based Quizzes"):
+        st.markdown("*Placeholder*: Possibly add timed quizzes, daily challenge, etc.")
+
+    with st.expander("Project Recommendations"):
+        st.markdown("*Placeholder*: Provide curated project ideas based on CGPA and user interests.")
+
     st.markdown("""
-    **Potential Next Steps:**
-    1. Real skill-based quizzes that affect CGPA trajectory.
-    2. Enhanced project recommendations or mentorship matching.
-    3. Machine learning integration for personalized CGPA predictions.
-    4. Real-time data integration from LMS or grade logs.
+    **Potential Next Steps**:
+    1. Machine learning integration for real predictive modeling.
+    2. Real-time data from an LMS or grade logs.
+    3. Multiplayer mode or leaderboards.
+    4. Deeper gamification with achievements or badges.
     """)
+
 
 if __name__ == "__main__":
     main()
