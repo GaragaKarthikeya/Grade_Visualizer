@@ -207,13 +207,5 @@ def main():
             c.save()
             st.download_button("Download PDF", data=buffer.getvalue(), file_name="cgpa_results.pdf", mime="application/pdf")
 
-    st.markdown("""
-    **Potential Next Steps:**
-    1. Integrate machine learning for predictive modeling.
-    2. Real-time data integration from LMS.
-    3. Multiplayer mode or leaderboards.
-    4. Deeper gamification with achievements.
-    """)
-
 if __name__ == "__main__":
     main()
