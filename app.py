@@ -70,8 +70,15 @@ def hex_to_rgb(hex_color):
 def main():
     st.title("The Ultimate CGPA Multiverse: No-Limit Advanced Stats Edition")
     st.markdown("""
+<<<<<<< HEAD
     Welcome! Explore detailed information about various academic paths and 
     how to interpret the ensuing plots.
+=======
+    Welcome! Before running simulations, explore detailed information about various academic paths and 
+    how to interpret the ensuing plots. This guide will help you understand the simulation outcomes 
+    and their significance.
+Made by Garaga Karthikeya@IIITB.
+>>>>>>> d466a6d5eaeca4f7c1adf2c52b7a4702a5c7e065
     """)
 
     st.sidebar.header("Simulation Configuration")
