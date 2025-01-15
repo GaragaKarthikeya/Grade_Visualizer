@@ -9,8 +9,9 @@ from rich.console import Console
 import random
 
 # --------------------------------------------------------------------------
-# Import path functions which expect a 'start' CGPA, steps, and seed,
-# and return a list of single-semester GPAs (0-4).
+# Import path functions which expect a 'start' CGPA, steps, seed,
+# and potentially a 'param' (if supported). Each function returns a list
+# of single-semester GPAs (0-4).
 # --------------------------------------------------------------------------
 from paths import (
     generate_balanced_growth,
@@ -43,13 +44,16 @@ from plotting import (
 sns.set_theme(style="darkgrid")
 console = Console()
 
-# Helper function updated to include 'start' parameter
-def generate_semester_gpas(_func, start, steps, seed=None):
+def generate_semester_gpas(_func, start, steps, seed=None, param=0.0):
     """
-    Generate single-semester GPAs for 'steps' future semesters using the
-    provided path function, starting from a given CGPA.
+    Generate single-semester GPAs for 'steps' future semesters using
+    the provided path function. Attempt to pass 'param' if supported,
+    otherwise call without it.
     """
-    return _func(start, steps=steps, seed=seed)
+    try:
+        return _func(start, steps=steps, seed=seed, param=param)
+    except TypeError:
+        return _func(start, steps=steps, seed=seed)
 
 def estimate_job_probability(final_cgpa):
     if final_cgpa < 2.5:
@@ -68,54 +72,63 @@ def hex_to_rgb(hex_color):
     return tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
 
 def main():
+    # ----------------------------------------------------------------
+    # TITLE & INTRO
+    # ----------------------------------------------------------------
     st.title("The Ultimate CGPA Multiverse: No-Limit Advanced Stats Edition")
     st.markdown("""
-<<<<<<< HEAD
-    Welcome! Explore detailed information about various academic paths and 
-    how to interpret the ensuing plots.
-=======
-    Welcome! Before running simulations, explore detailed information about various academic paths and 
-    how to interpret the ensuing plots. This guide will help you understand the simulation outcomes 
-    and their significance.
-Made by Garaga Karthikeya@IIITB.
->>>>>>> d466a6d5eaeca4f7c1adf2c52b7a4702a5c7e065
+    Welcome to the CGPA simulator! This web app lets you:
+    - Explore various academic trajectories (paths).
+    - Tweak parameters for each path to shape outcomes.
+    - Visualize how your CGPA might evolve over semesters.
+
+    Made by Garaga Karthikeya @ IIITB.
     """)
 
+    # ----------------------------------------------------------------
+    # SIDEBAR CONFIGURATION
+    # ----------------------------------------------------------------
     st.sidebar.header("Simulation Configuration")
-    mass_mode = st.sidebar.checkbox(
-        "Enable Mass Simulation Mode (Range Band)",
-        value=False
-    )
-    variations = st.sidebar.slider(
-        "How many trajectories per path?",
-        1, 5000, 500 if mass_mode else 5
-    )
+    mass_mode = st.sidebar.checkbox("Enable Mass Simulation Mode (Range Band)", value=False)
+    variations = st.sidebar.slider("How many trajectories per path?", 1, 5000, 500 if mass_mode else 5)
+
     all_paths = [
         "Balanced Growth", "High Achiever", "Downfall & Recovery", "Up & Down",
         "Perfectionist", "Consistent Improve", "Chaotic", "Late Bloomer",
         "Spike Plateau", "Senioritis", "No Study", "Burnout", "Triumph Over Adversity"
     ]
-    selected_paths = st.sidebar.multiselect(
-        "Select paths to simulate:",
-        options=all_paths,
-        default=["Balanced Growth", "High Achiever"]
-    )
-    # Update slider to allow up to semester 11
-    current_semester = st.sidebar.slider("Current Semester (1-11)", 1, 11, 1)
+    path_params = {}
+    with st.sidebar.expander("Custom Path Parameters"):
+        for p in all_paths:
+            path_params[p] = st.number_input(
+                f"{p} Param",
+                min_value=0.0,
+                max_value=10.0,
+                value=1.0,
+                step=0.1,
+                help=f"Custom parameter for {p}."
+            )
+
+    selected_paths = st.sidebar.multiselect("Select paths to simulate:", options=all_paths, default=["Balanced Growth", "High Achiever"])
+
+    current_semester = st.sidebar.slider("Current Semester (1-10)", 1, 10, 1)
     current_cgpa = st.sidebar.slider("Current CGPA (0.0 - 4.0)", 0.0, 4.0, 2.91, 0.01)
 
     with st.sidebar.expander("What-If Future GPA Adjustments"):
-        st.markdown("Add a constant shift to each single-semester GPA.")
-        what_if_adjust = st.slider("Adjust future single-semester GPA by ±", -1.0, 1.0, 0.0, 0.05)
-        st.write(f"Applying ±{what_if_adjust:.2f} shift to each semester's GPA.")
+        st.markdown("Add a constant shift to each single-semester GPA for 'what if' scenarios.")
+        what_if_adjust = st.sidebar.slider("Adjust future single-semester GPA by ±", -1.0, 1.0, 0.0, 0.05)
+        st.sidebar.write(f"Applying ±{what_if_adjust:.2f} shift to each semester's GPA.")
 
-    # Set total semesters to 10
+    # ----------------------------------------------------------------
+    # SEMESTER CONFIGURATION
+    # ----------------------------------------------------------------
     total_semesters = 10
-    # Calculate number of future semesters based on current semester
-    steps = total_semesters - current_semester
-    # Generate an array for future semester labels
+    steps = max(total_semesters - current_semester, 0)
     future_semesters = np.arange(current_semester + 1, total_semesters + 1)
 
+    # ----------------------------------------------------------------
+    # PATH & STYLE MAPS
+    # ----------------------------------------------------------------
     path_map = {
         "Balanced Growth": generate_balanced_growth,
         "High Achiever": generate_high_achiever,
@@ -147,24 +160,27 @@ Made by Garaga Karthikeya@IIITB.
         "Triumph Over Adversity": {"color": "#DC143C", "dash": "solid"}
     }
 
+    # ----------------------------------------------------------------
+    # MAIN SIMULATION
+    # ----------------------------------------------------------------
     final_cgpas = []
     fig = go.Figure()
 
     for path_name in selected_paths:
         all_trajectories = []
+
         for variation_index in range(variations):
             seed_val = (42 + hash(path_name) + variation_index) % (2 ** 32)
             random.seed(seed_val)
 
-            # Generate single-semester GPAs using the current CGPA as start
             future_sem_gpas = generate_semester_gpas(
-                path_map[path_name],
+                _func=path_map[path_name],
                 start=current_cgpa,
                 steps=steps,
-                seed=seed_val
+                seed=seed_val,
+                param=path_params[path_name]
             )
 
-            # Apply adjustments to future semester GPAs
             for i in range(len(future_sem_gpas)):
                 future_sem_gpas[i] = min(max(future_sem_gpas[i] + what_if_adjust, 0.0), 4.0)
 
@@ -190,6 +206,7 @@ Made by Garaga Karthikeya@IIITB.
                 "Seek leadership roles." if final_val < 3.8 else
                 "Expand into R&D."
             )
+
             final_cgpas.append((path_name, variation_index + 1, final_val, cat, job_prob, advice))
             all_trajectories.append(cgpa_history)
 
@@ -236,7 +253,7 @@ Made by Garaga Karthikeya@IIITB.
             ))
 
     fig.update_layout(
-        title="CGPA Evolution (Refactored for Logical Single-Semester GPAs)",
+        title="CGPA Evolution with Multiple Paths & Custom Parameters",
         xaxis_title="Semester",
         yaxis_title="Cumulative CGPA",
         hovermode="closest",
@@ -251,6 +268,9 @@ Made by Garaga Karthikeya@IIITB.
         annotation_position="bottom right"
     )
 
+    # ----------------------------------------------------------------
+    # TABS DEFINITION
+    # ----------------------------------------------------------------
     tabs = st.tabs([
         "Path Information",
         "Interactive Graph",
@@ -258,19 +278,93 @@ Made by Garaga Karthikeya@IIITB.
         "Distributions & Exports"
     ])
 
+    # ----------------------------------------------------------------
+    # TAB 1: Path Information with Detailed Examples
+    # ----------------------------------------------------------------
     with tabs[0]:
-        st.header("Detailed Path Information & Interpretation")
+        st.header("Path Information & Real-World Examples")
         st.markdown("""
-        ### Simulation Paths Explained
-        Each path function returns single-semester GPAs (0-4).
-        The app computes the cumulative GPA step-by-step.
+        Below, you’ll find detailed explanations of each academic path, 
+        along with real-world examples illustrating what might cause 
+        a student to follow that path.
+
+        **1. Balanced Growth**  
+        *Steady, incremental improvement each semester.*  
+        - **Academic Behavior**: Consistent study routines, gradually taking on more challenging material.  
+        - **Real-World Example**: A student who steadily improves by dedicating a few extra hours each week to coursework, gradually raising their grades through persistent effort without extreme peaks or troughs.
+
+        **2. High Achiever**  
+        *Consistently top performance from the start.*  
+        - **Academic Behavior**: Exceptional discipline, strong grasp of concepts, active participation, and thorough exam preparation.  
+        - **Real-World Example**: A student enters college with advanced knowledge and excels due to rigorous study habits and strong motivation.
+
+        **3. Downfall & Recovery**  
+        *A dip in performance followed by a strong bounce back.*  
+        - **Academic Behavior**: Initial high grades, a period of decline due to external factors, followed by recovery.  
+        - **Real-World Example**: A student struggles with personal issues mid-course causing grades to drop, then overcomes these challenges and improves.
+
+        **4. Up & Down**  
+        *Fluctuating academic performance.*  
+        - **Academic Behavior**: Irregular study patterns, varying course difficulties, swings in motivation.  
+        - **Real-World Example**: A student performs well in some semesters when motivated and struggles in others due to distractions or tougher courses.
+
+        **5. Perfectionist**  
+        *Strives for flawless performance with occasional setbacks.*  
+        - **Academic Behavior**: High expectations lead to meticulous study, but stress may cause performance dips.  
+        - **Real-World Example**: A student aiming for perfect scores may experience burnout or anxiety, impacting some results despite strong efforts.
+
+        **6. Consistent Improve**  
+        *Slow but steady academic improvement.*  
+        - **Academic Behavior**: Gradual refinement of study techniques, consistently better understanding and grades over time.  
+        - **Real-World Example**: A student learns to manage time better each year, seeks help when needed, and steadily raises their GPA.
+
+        **7. Chaotic**  
+        *Highly unpredictable performance.*  
+        - **Academic Behavior**: Erratic study habits, external factors causing varying levels of engagement.  
+        - **Real-World Example**: A student juggling work, family, or health issues produces inconsistent grades with no clear trend.
+
+        **8. Late Bloomer**  
+        *Starts slow, then significantly improves.*  
+        - **Academic Behavior**: Initial difficulties adjusting, followed by effective learning strategies and passion for subjects.  
+        - **Real-World Example**: A freshman struggles initially but discovers strong study routines or a field of interest, leading to a dramatic GPA increase in later years.
+
+        **9. Spike Plateau**  
+        *Early high performance that levels off.*  
+        - **Academic Behavior**: Strong start with high grades, then maintenance without further improvement.  
+        - **Real-World Example**: A student excels early due to strong preparation but eventually reaches a performance ceiling as courses become more challenging, maintaining GPA without further spikes.
+
+        **10. Senioritis**  
+        *Declining performance in later semesters.*  
+        - **Academic Behavior**: Reduced effort and engagement as graduation nears.  
+        - **Real-World Example**: After securing job offers or grad school placements, a student’s motivation wanes, leading to a dip in academic performance.
+
+        **11. No Study**  
+        *Minimal academic effort over time.*  
+        - **Academic Behavior**: Lack of engagement, poor time management, near-stagnant GPA.  
+        - **Real-World Example**: A student who attends classes but does not study or complete assignments, resulting in consistently low grades.
+
+        **12. Burnout**  
+        *Sharp decline after initial success.*  
+        - **Academic Behavior**: Overcommitment leads to exhaustion, health issues, and subsequent performance drop.  
+        - **Real-World Example**: A student who pushes too hard initially experiences burnout, causing a sudden drop in GPA despite earlier high performance.
+
+        **13. Triumph Over Adversity**  
+        *Severe dip due to hardships, followed by overcoming challenges.*  
+        - **Academic Behavior**: Faces significant obstacles, performance drops, then recovers and excels.  
+        - **Real-World Example**: A student endures financial, personal, or health crises that lower grades but eventually overcomes these challenges with support, leading to a strong recovery in academic performance.
         """)
 
+    # ----------------------------------------------------------------
+    # TAB 2: Interactive Graph
+    # ----------------------------------------------------------------
     with tabs[1]:
         if mass_mode and variations > 100:
             st.info("Showing range band for many lines. This might be computationally heavy!")
         st.plotly_chart(fig, use_container_width=True)
 
+    # ----------------------------------------------------------------
+    # TAB 3: Post-Simulation Analysis
+    # ----------------------------------------------------------------
     with tabs[2]:
         table_data = []
         final_values_only = []
@@ -366,7 +460,7 @@ Made by Garaga Karthikeya@IIITB.
             st.write("No CGPAs to analyze.")
 
         st.markdown("""
-        **Quick Recruiter Insights:**
+        **Quick Recruiter Insights**:
         - **Below 3.0**: Potential cutoffs for many companies.
         - **3.0-3.5**: Decent zone—employers look at strong projects/internships.
         - **3.5-3.6**: Competitive; advanced courses stand out.
@@ -374,8 +468,20 @@ Made by Garaga Karthikeya@IIITB.
         - **3.8+**: Near-perfect—focus on real-world, R&D, or specialized achievements!
         """)
 
+    # ----------------------------------------------------------------
+    # TAB 4: Distributions & Exports
+    # ----------------------------------------------------------------
     with tabs[3]:
         st.markdown("### Final CGPA Distributions")
+        table_data = []
+        final_values_only = []
+        for (p_name, var_idx, final_val, cat, job_prob, advice) in final_cgpas:
+            table_data.append([
+                p_name, var_idx, f"{final_val:.2f}",
+                f"{job_prob * 100:.1f}%", advice, cat
+            ])
+            final_values_only.append(final_val)
+
         if final_values_only:
             st.plotly_chart(create_histogram(final_values_only), use_container_width=True)
             st.plotly_chart(create_box_plot(final_values_only), use_container_width=True)
