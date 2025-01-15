@@ -6,16 +6,28 @@ import streamlit as st
 import io
 from reportlab.pdfgen import canvas
 from rich.console import Console
+import random
 
-# Import path functions
+# --------------------------------------------------------------------------
+# Import path functions which expect a 'start' CGPA, steps, and seed,
+# and return a list of single-semester GPAs (0-4).
+# --------------------------------------------------------------------------
 from paths import (
-    generate_balanced_growth, generate_high_achiever, generate_downfall_recovery,
-    generate_up_down, generate_perfectionist, generate_consistent_improvement,
-    generate_chaotic, generate_late_bloomer, generate_spike_plateau, generate_senioritis,
-    generate_no_study, generate_burnout, generate_triumph_over_adversity
+    generate_balanced_growth,
+    generate_high_achiever,
+    generate_downfall_recovery,
+    generate_up_down,
+    generate_perfectionist,
+    generate_consistent_improvement,
+    generate_chaotic,
+    generate_late_bloomer,
+    generate_spike_plateau,
+    generate_senioritis,
+    generate_no_study,
+    generate_burnout,
+    generate_triumph_over_adversity
 )
 
-# Import analysis & plotting utilities
 from analysis import (
     summarize_statistics,
     create_plotly_table,
@@ -28,16 +40,18 @@ from plotting import (
     create_pie_chart
 )
 
-@st.cache_data
-def compute_trajectory(_func, start_cgpa, steps, seed=None):
-    """Compute a single CGPA trajectory for a given function/path."""
-    return _func(start_cgpa, steps=steps, seed=seed)
-
 sns.set_theme(style="darkgrid")
 console = Console()
 
+# Helper function updated to include 'start' parameter
+def generate_semester_gpas(_func, start, steps, seed=None):
+    """
+    Generate single-semester GPAs for 'steps' future semesters using the
+    provided path function, starting from a given CGPA.
+    """
+    return _func(start, steps=steps, seed=seed)
+
 def estimate_job_probability(final_cgpa):
-    """A simple placeholder function to estimate job probabilities by CGPA."""
     if final_cgpa < 2.5:
         return 0.4
     elif final_cgpa < 3.0:
@@ -50,26 +64,20 @@ def estimate_job_probability(final_cgpa):
         return 0.95
 
 def hex_to_rgb(hex_color):
-    """Convert hex color string to an RGB tuple."""
     hex_color = hex_color.lstrip('#')
     return tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
 
 def main():
     st.title("The Ultimate CGPA Multiverse: No-Limit Advanced Stats Edition")
     st.markdown("""
-    Welcome! Before running simulations, explore detailed information about various academic paths and 
-    how to interpret the ensuing plots. This guide will help you understand the simulation outcomes 
-    and their significance.
+    Welcome! Explore detailed information about various academic paths and 
+    how to interpret the ensuing plots.
     """)
 
-    # -------------------------------------------
-    # SIDEBAR: Simulation & UI Config
-    # -------------------------------------------
     st.sidebar.header("Simulation Configuration")
     mass_mode = st.sidebar.checkbox(
         "Enable Mass Simulation Mode (Range Band)",
-        value=False,
-        help="When enabled, lines won't be limited. We also plot a 'range band' if many lines are generated."
+        value=False
     )
     variations = st.sidebar.slider(
         "How many trajectories per path?",
@@ -85,24 +93,22 @@ def main():
         options=all_paths,
         default=["Balanced Growth", "High Achiever"]
     )
-    current_semester = st.sidebar.slider("Current Semester (1-10)", 1, 10, 1)
+    # Update slider to allow up to semester 11
+    current_semester = st.sidebar.slider("Current Semester (1-11)", 1, 11, 1)
     current_cgpa = st.sidebar.slider("Current CGPA (0.0 - 4.0)", 0.0, 4.0, 2.91, 0.01)
 
-    with st.sidebar.expander("What-If Future CGPA Adjustments"):
-        st.markdown("Simulate a consistent positive or negative shift each semester.")
-        what_if_adjust = st.slider("Adjust future CGPAs by ±", -1.0, 1.0, 0.0, 0.05)
-        st.write(f"Applying ±{what_if_adjust:.2f} shift to future steps.")
-    with st.sidebar.expander("Advanced Options"):
-        st.write("E.g., tweak growth rates, incorporate real data, or add custom events here...")
+    with st.sidebar.expander("What-If Future GPA Adjustments"):
+        st.markdown("Add a constant shift to each single-semester GPA.")
+        what_if_adjust = st.slider("Adjust future single-semester GPA by ±", -1.0, 1.0, 0.0, 0.05)
+        st.write(f"Applying ±{what_if_adjust:.2f} shift to each semester's GPA.")
 
-    st.sidebar.markdown("---")
-    st.sidebar.info("All set! Let's run the simulation...")
+    # Set total semesters to 10
+    total_semesters = 10
+    # Calculate number of future semesters based on current semester
+    steps = total_semesters - current_semester
+    # Generate an array for future semester labels
+    future_semesters = np.arange(current_semester + 1, total_semesters + 1)
 
-    # -------------------------------------------
-    # Pre-Setup
-    # -------------------------------------------
-    steps = 1 if current_semester >= 10 else (10 - current_semester + 1)
-    future_semesters = np.arange(current_semester, current_semester + steps)
     path_map = {
         "Balanced Growth": generate_balanced_growth,
         "High Achiever": generate_high_achiever,
@@ -134,21 +140,40 @@ def main():
         "Triumph Over Adversity": {"color": "#DC143C", "dash": "solid"}
     }
 
-    # -------------------------------------------
-    # MAIN CHART: Lines or Range Band
-    # -------------------------------------------
     final_cgpas = []
     fig = go.Figure()
+
     for path_name in selected_paths:
         all_trajectories = []
         for variation_index in range(variations):
             seed_val = (42 + hash(path_name) + variation_index) % (2 ** 32)
-            traj = compute_trajectory(path_map[path_name], current_cgpa, steps, seed_val)
-            traj = [
-                min(max(2.0, score + what_if_adjust), 4.0) if i != 0 else score
-                for i, score in enumerate(traj)
-            ]
-            final_val = traj[-1]
+            random.seed(seed_val)
+
+            # Generate single-semester GPAs using the current CGPA as start
+            future_sem_gpas = generate_semester_gpas(
+                path_map[path_name],
+                start=current_cgpa,
+                steps=steps,
+                seed=seed_val
+            )
+
+            # Apply adjustments to future semester GPAs
+            for i in range(len(future_sem_gpas)):
+                future_sem_gpas[i] = min(max(future_sem_gpas[i] + what_if_adjust, 0.0), 4.0)
+
+            cgpa_history = []
+            sem_history = []
+            current_gpa = current_cgpa
+            completed_semesters = current_semester
+
+            for single_sem_gpa in future_sem_gpas:
+                new_cgpa = ((current_gpa * completed_semesters) + single_sem_gpa) / (completed_semesters + 1)
+                cgpa_history.append(new_cgpa)
+                sem_history.append(single_sem_gpa)
+                current_gpa = new_cgpa
+                completed_semesters += 1
+
+            final_val = cgpa_history[-1] if cgpa_history else current_cgpa
             cat = categorize_cgpa(final_val)
             job_prob = estimate_job_probability(final_val)
             advice = (
@@ -159,11 +184,32 @@ def main():
                 "Expand into R&D."
             )
             final_cgpas.append((path_name, variation_index + 1, final_val, cat, job_prob, advice))
-            all_trajectories.append(traj)
+            all_trajectories.append(cgpa_history)
 
-        all_trajectories = np.array(all_trajectories)
+            if not mass_mode:
+                custom_data = [f"{gpa:.2f}" for gpa in sem_history]
+                line_name = f"{path_name} Var {variation_index + 1}" if variation_index == 0 else None
+                fig.add_trace(go.Scatter(
+                    x=future_semesters,
+                    y=cgpa_history,
+                    mode='lines+markers',
+                    name=line_name,
+                    customdata=custom_data,
+                    hovertemplate=(
+                        "Semester: %{x}<br>"
+                        "Cumulative CGPA: %{y:.2f}<br>"
+                        "Single-Sem GPA: %{customdata}<br>"
+                        "<extra>%{fullData.name}</extra>"
+                    ),
+                    line=dict(
+                        color=style_map[path_name]["color"],
+                        dash=style_map[path_name]["dash"],
+                        width=2
+                    )
+                ))
 
         if mass_mode and variations > 1:
+            all_trajectories = np.array(all_trajectories)
             min_curve = np.min(all_trajectories, axis=0)
             max_curve = np.max(all_trajectories, axis=0)
             x_band = np.concatenate([future_semesters, future_semesters[::-1]])
@@ -181,34 +227,9 @@ def main():
                 hoverinfo='skip',
                 showlegend=True
             ))
-        else:
-            for i in range(variations):
-                traj = all_trajectories[i]
-                customdata = [
-                    f"{traj[idx + 1]:.2f}" if idx < steps - 1 else "N/A"
-                    for idx in range(steps)
-                ]
-                line_name = f"{path_name} Var {i + 1}" if i == 0 else None
-                fig.add_trace(go.Scatter(
-                    x=future_semesters,
-                    y=traj,
-                    mode='lines+markers',
-                    name=line_name,
-                    customdata=customdata,
-                    hovertemplate=(
-                        "Semester: %{x}<br>"
-                        "CGPA: %{y:.2f}<br>"
-                        "Next CGPA: %{customdata}<extra>%{fullData.name}</extra>"
-                    ),
-                    line=dict(
-                        color=style_map[path_name]["color"],
-                        dash=style_map[path_name]["dash"],
-                        width=2
-                    )
-                ))
 
     fig.update_layout(
-        title="CGPA Evolution (No-Limit Edition)",
+        title="CGPA Evolution (Refactored for Logical Single-Semester GPAs)",
         xaxis_title="Semester",
         yaxis_title="Cumulative CGPA",
         hovermode="closest",
@@ -223,9 +244,6 @@ def main():
         annotation_position="bottom right"
     )
 
-    # -------------------------------------------
-    # TAB STRUCTURE & CONTENT
-    # -------------------------------------------
     tabs = st.tabs([
         "Path Information",
         "Interactive Graph",
@@ -233,47 +251,19 @@ def main():
         "Distributions & Exports"
     ])
 
-    # TAB 1: Path Information
     with tabs[0]:
         st.header("Detailed Path Information & Interpretation")
         st.markdown("""
         ### Simulation Paths Explained
-        In this simulation, each path represents a unique academic journey:
-
-        - **Balanced Growth**: A steady, reliable increase in CGPA across semesters.
-        - **High Achiever**: Consistently high performance maintained throughout.
-        - **Downfall & Recovery**: A significant drop in performance followed by a strong recovery.
-        - **Up & Down**: Highly variable performance with ups and downs.
-        - **Perfectionist**: High expectations lead to occasional setbacks despite strong performance.
-        - **Consistent Improve**: Small, steady improvements over time.
-        - **Chaotic**: Unpredictable changes and no clear pattern.
-        - **Late Bloomer**: Slow start followed by rapid improvement in later semesters.
-        - **Spike Plateau**: Early peak performance with a subsequent leveling off.
-        - **Senioritis**: Decline in motivation and performance over time.
-        - **No Study**: Little to no improvement, reflecting minimal effort.
-        - **Burnout**: Rapid decline in performance after initial success due to fatigue.
-        - **Triumph Over Adversity**: Overcoming significant challenges to achieve high CGPA eventually.
-
-        ### How to Interpret the Plots
-        - **Interactive Graph**: Visualizes trajectories of CGPA evolution over semesters for each selected path.
-          - **Mass Mode**: Shaded areas (range bands) display the variability across multiple simulations.
-          - **Line Styles**: Each path has a unique color and line style to differentiate it.
-        - **Violin Plot**: Displays the distribution and density of final CGPAs, showing where most outcomes cluster.
-        - **Scatter Plot**: Plots final CGPAs against variation indices to visualize dispersion and outliers.
-        - **Bar Chart of CGPA Categories**: Summarizes how many trajectories fall into each CGPA category.
-
-        Use these plots to gain insights into potential academic trajectories, 
-        understand risks of burnout or consistent improvement, and identify patterns 
-        that might inform study strategies or interventions.
+        Each path function returns single-semester GPAs (0-4).
+        The app computes the cumulative GPA step-by-step.
         """)
 
-    # TAB 2: Interactive Graph
     with tabs[1]:
         if mass_mode and variations > 100:
-            st.info("Showing range band or many lines. This might be computationally heavy!")
+            st.info("Showing range band for many lines. This might be computationally heavy!")
         st.plotly_chart(fig, use_container_width=True)
 
-    # TAB 3: Post-Simulation Analysis
     with tabs[2]:
         table_data = []
         final_values_only = []
@@ -302,7 +292,7 @@ def main():
             ))
             fig_violin.update_layout(
                 xaxis_title="All Trajectories",
-                yaxis_title="CGPA",
+                yaxis_title="Final CGPA",
                 template="plotly_white"
             )
             st.plotly_chart(fig_violin, use_container_width=True)
@@ -377,7 +367,6 @@ def main():
         - **3.8+**: Near-perfect—focus on real-world, R&D, or specialized achievements!
         """)
 
-    # TAB 4: Distributions & Exports
     with tabs[3]:
         st.markdown("### Final CGPA Distributions")
         if final_values_only:
